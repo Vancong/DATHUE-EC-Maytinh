@@ -69,8 +69,8 @@ class SupplierController extends Controller
 
     public function destroy(Supplier $supplier): RedirectResponse
     {
-        if ($supplier->stockReceipts()->exists()) {
-            return back()->with('error', 'Không thể xóa nhà cung cấp đã có phiếu nhập kho.');
+        if ($supplier->stockReceipts()->exists() || $supplier->stockImports()->exists()) {
+            return back()->with('error', 'Không thể xóa nhà cung cấp đã có lịch sử nhập hàng.');
         }
 
         $supplier->delete();

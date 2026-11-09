@@ -90,6 +90,10 @@ class AccountController extends Controller
             ->where('user_id', Auth::id())
             ->firstOrFail();
 
+        if (! $order->canBeCancelledByCustomer()) {
+            return back()->with('error', 'Đơn hàng đang ở trạng thái không cho phép tự hủy. Vui lòng liên hệ hỗ trợ.');
+        }
+
         try {
             $this->orderService->updateStatus($order, 'cancelled', $request->input('reason'), Auth::id());
 

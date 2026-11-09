@@ -748,4 +748,110 @@ class EcommerceWorkflowTest extends TestCase
         $res->assertSee('Nhập thử nghiệm để kiểm tra bảng lịch sử');
         $res->assertSee($this->admin->name);
     }
+
+    public function test_customer_cannot_cancel_order_in_processing_or_shipping(): void
+    {
+        $this->actingAs($this->customer);
+
+        // 1. Order in 'processing'
+        $orderProcessing = Order::create([
+            'order_code' => 'ORD-PROC-001',
+            'user_id' => $this->customer->id,
+            'customer_name' => $this->customer->name,
+            'customer_email' => $this->customer->email,
+            'customer_phone' => '0901234567',
+            'shipping_address' => 'District 1, HCM',
+            'subtotal' => 28000000,
+            'discount_amount' => 0,
+            'shipping_fee' => 0,
+            'total_amount' => 28000000,
+            'payment_method' => 'cod',
+            'payment_status' => 'unpaid',
+            'order_status' => 'processing',
+            'inventory_settled' => false,
+        ]);
+
+        $orderProcessing->items()->create([
+            'product_id' => $this->product->id,
+            'product_name' => $this->product->name,
+            'product_sku' => $this->product->sku,
+            'unit_price' => 28000000,
+            'quantity' => 1,
+            'total_price' => 28000000,
+        ]);
+
+        $stockBefore = $this->product->fresh()->stock_quantity;
+
+        // Customer attempts to cancel order in processing
+        $res = $this->post(route('account.orders.cancel', $orderProcessing->order_code), [
+            'reason' => 'Khách muốn tự hủy đơn đang đóng gói',
+        ]);
+
+        $res->assertSessionHas('error');
+        $this->assertEquals('processing', $orderProcessing->fresh()->order_status);
+        $this->assertEquals($stockBefore, $this->product->fresh()->stock_quantity);
+
+        // 2. Order in 'shipping'
+        $orderShipping = Order::create([
+            'order_code' => 'ORD-SHIP-001',
+            'user_id' => $this->customer->id,
+            'customer_name' => $this->customer->name,
+            'customer_email' => $this->customer->email,
+            'customer_phone' => '0901234567',
+            'shipping_address' => 'District 1, HCM',
+            'subtotal' => 28000000,
+            'discount_amount' => 0,
+            'shipping_fee' => 0,
+            'total_amount' => 28000000,
+            'payment_method' => 'cod',
+            'payment_status' => 'unpaid',
+            'order_status' => 'shipping',
+            'inventory_settled' => false,
+        ]);
+
+        $orderShipping->items()->create([
+            'product_id' => $this->product->id,
+            'product_name' => $this->product->name,
+            'product_sku' => $this->product->sku,
+            'unit_price' => 28000000,
+            'quantity' => 1,
+            'total_price' => 28000000,
+        ]);
+
+        // Customer attempts to cancel order in shipping
+        $resShip = $this->post(route('account.orders.cancel', $orderShipping->order_code), [
+            'reason' => 'Khách muốn tự hủy đơn đang giao',
+        ]);
+
+        $resShip->assertSessionHas('error');
+        $this->assertEquals('shipping', $orderShipping->fresh()->order_status);
+        $this->assertEquals($stockBefore, $this->product->fresh()->stock_quantity);
+    }
+
+    public function test_admin_cannot_delete_supplier_with_stock_imports(): void
+    {
+        $this->actingAs($this->admin);
+
+        // Create a new supplier and attach a stock import record
+        $supplier = Supplier::create([
+            'name' => 'Supplier With History',
+            'code' => 'SUP-HIST-01',
+            'is_active' => true,
+        ]);
+
+        $this->product->stockImports()->create([
+            'supplier_id' => $supplier->id,
+            'quantity' => 5,
+            'note' => 'Nhập lô hàng thử nghiệm',
+            'created_by' => $this->admin->id,
+        ]);
+
+        $this->assertTrue($supplier->stockImports()->exists());
+
+        // Attempt to delete supplier
+        $res = $this->delete(route('admin.suppliers.destroy', $supplier));
+
+        $res->assertSessionHas('error', 'Không thể xóa nhà cung cấp đã có lịch sử nhập hàng.');
+        $this->assertDatabaseHas('suppliers', ['id' => $supplier->id]);
+    }
 }
